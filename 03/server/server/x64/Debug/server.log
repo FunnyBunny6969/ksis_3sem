@@ -1,4 +1,1 @@
-﻿  server.cpp
-D:\UNIK\02\ksis\03\server\server\server.cpp(95,22): warning C4267: инициализация: преобразование из "size_t" в "int"; возможна потеря данных
-D:\UNIK\02\ksis\03\server\server\server.cpp(108,47): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
-  server.vcxproj -> D:\UNIK\02\ksis\03\server\x64\Debug\server.exe
+﻿  server.vcxproj -> D:\UNIK\02\ksis\03\server\x64\Debug\server.exe
