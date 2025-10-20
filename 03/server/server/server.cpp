@@ -63,6 +63,7 @@ string findStudentsAboveAverage(double minAverage) {
     return result;
 }
 
+
 DWORD WINAPI ThreadFunc(LPVOID lpParam) {
     SOCKET client_socket = *((SOCKET*)lpParam);
     delete (SOCKET*)lpParam;
@@ -75,17 +76,39 @@ DWORD WINAPI ThreadFunc(LPVOID lpParam) {
     char buf[256];
     int bytes_received;
 
-    DWORD timeout = 30000; 
+    // Увеличиваем таймаут и добавляем таймаут на отправку
+    DWORD timeout = 120000; // 2 минуты
     setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+    setsockopt(client_socket, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
 
-    while ((bytes_received = recv(client_socket, buf, sizeof(buf), 0)) > 0) {
+    while ((bytes_received = recv(client_socket, buf, sizeof(buf) - 1, 0)) > 0) {
+        buf[bytes_received] = '\0'; // Гарантируем строку
+
         double minAverage = atof(buf);
         cout << "Клиент запросил студентов со средним баллом > " << minAverage << endl;
 
         string result = findStudentsAboveAverage(minAverage);
-        send(client_socket, result.c_str(), result.length() + 1, 0);
+
+        // БЕЗОПАСНАЯ ОТПРАВКА
+        int total_sent = 0;
+        const char* data = result.c_str();
+        int data_len = result.length();
+
+        while (total_sent < data_len) {
+            int sent = send(client_socket, data + total_sent, data_len - total_sent, 0);
+            if (sent == SOCKET_ERROR) {
+                cout << "Send failed: " << WSAGetLastError() << endl;
+                goto cleanup;
+            }
+            total_sent += sent;
+        }
+
+        // Отправляем маркер конца сообщения
+        const char* end_marker = "\nEND\n";
+        send(client_socket, end_marker, strlen(end_marker), 0);
     }
 
+cleanup:
     shutdown(client_socket, SD_BOTH);
     closesocket(client_socket);
 
@@ -94,8 +117,9 @@ DWORD WINAPI ThreadFunc(LPVOID lpParam) {
     cout << "Client disconnected. Active connections: " << activeConnections << endl;
     LeaveCriticalSection(&cs);
 
-    return 0; 
+    return 0;
 }
+
 
 int main() {
     setlocale(LC_CTYPE, "rus");

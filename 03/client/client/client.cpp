@@ -46,24 +46,51 @@ int main() {
             break;
         }
 
-        // Отправляем запрос серверу
-        send(s, buf, strlen(buf) + 1, 0);
+        // БЕЗОПАСНАЯ ОТПРАВКА
+        int send_result = send(s, buf, strlen(buf) + 1, 0);
+        if (send_result == SOCKET_ERROR) {
+            cout << "Send failed: " << WSAGetLastError() << endl;
+            break;
+        }
 
-        // Получаем ответ от сервера
-        char response[1024];
-        int bytes_received = recv(s, response, sizeof(response), 0);
+        // БЕЗОПАСНОЕ ПОЛУЧЕНИЕ
+        string full_response;
+        char chunk[1024];
+        bool message_complete = false;
 
-        if (bytes_received > 0) {
+        while (!message_complete) {
+            int bytes_received = recv(s, chunk, sizeof(chunk) - 1, 0);
+
+            if (bytes_received > 0) {
+                chunk[bytes_received] = '\0';
+                full_response.append(chunk);
+
+                // Проверяем маркер конца сообщения
+                if (full_response.find("\nEND\n") != string::npos) {
+                    message_complete = true;
+                    // Убираем маркер из вывода
+                    size_t pos = full_response.find("\nEND\n");
+                    full_response = full_response.substr(0, pos);
+                }
+            }
+            else if (bytes_received == 0) {
+                cout << "Server disconnected" << endl;
+                break;
+            }
+            else {
+                if (WSAGetLastError() == WSAETIMEDOUT) {
+                    cout << "Receive timeout" << endl;
+                }
+                else {
+                    cout << "Receive error: " << WSAGetLastError() << endl;
+                }
+                break;
+            }
+        }
+
+        if (!full_response.empty()) {
             cout << "Students found:" << endl;
-            cout << response << endl;
-        }
-        else if (bytes_received == 0) {
-            cout << "Server disconnected" << endl;
-            break;
-        }
-        else {
-            cout << "Receive error" << endl;
-            break;
+            cout << full_response << endl;
         }
     }
 
