@@ -1,0 +1,3 @@
+﻿  client.cpp
+D:\UNIK\02\ksis\03\client\client\client.cpp(51,38): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+D:\UNIK\02\ksis\03\client\client\client.cpp(28,37): error C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings

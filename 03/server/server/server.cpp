@@ -3,6 +3,8 @@
 #include <winsock2.h>
 #include <vector>
 #include <string>
+#include <windows.h>
+#include <ws2tcpip.h>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -15,7 +17,6 @@ struct Student {
     double scholarship;
     vector<int> grades;
 
-    // Метод для вычисления среднего балла
     double getAverageGrade() const {
         if (grades.empty()) return 0;
         double sum = 0;
@@ -26,10 +27,10 @@ struct Student {
     }
 };
 
-// Глобальный список студентов
 vector<Student> students;
+int activeConnections = 0;
+CRITICAL_SECTION cs;
 
-// Инициализация тестовых данных
 void initializeStudents() {
     students = {
         {"Иванов Иван Иванович", "ГР-101", 1500.0, {8, 9, 7, 9, 8}},
@@ -40,10 +41,8 @@ void initializeStudents() {
     };
 }
 
-// Функция для поиска студентов со средним баллом выше заданного
 string findStudentsAboveAverage(double minAverage) {
     string result;
-
     for (const auto& student : students) {
         double average = student.getAverageGrade();
         if (average > minAverage) {
@@ -58,48 +57,50 @@ string findStudentsAboveAverage(double minAverage) {
             result += "------------------------\n";
         }
     }
-
     if (result.empty()) {
         result = "Студентов со средним баллом выше " + to_string(minAverage) + " не найдено\n";
     }
-
     return result;
 }
 
-DWORD WINAPI ThreadFunc(LPVOID client_socket) {
-    SOCKET s2 = *((SOCKET*)client_socket);
+DWORD WINAPI ThreadFunc(LPVOID lpParam) {
+    SOCKET client_socket = *((SOCKET*)lpParam);
+    delete (SOCKET*)lpParam;
+
+    EnterCriticalSection(&cs);
+    activeConnections++;
+    cout << "Client connected. Active connections: " << activeConnections << endl;
+    LeaveCriticalSection(&cs);
+
     char buf[256];
+    int bytes_received;
 
-    while (recv(s2, buf, sizeof(buf), 0) > 0) {
-        // Преобразуем полученные данные в число (минимальный средний балл)
+    DWORD timeout = 30000; 
+    setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+
+    while ((bytes_received = recv(client_socket, buf, sizeof(buf), 0)) > 0) {
         double minAverage = atof(buf);
-
         cout << "Клиент запросил студентов со средним баллом > " << minAverage << endl;
 
-        // Ищем студентов
         string result = findStudentsAboveAverage(minAverage);
-
-        // Отправляем результат клиенту
-        send(s2, result.c_str(), result.length() + 1, 0);
+        send(client_socket, result.c_str(), result.length() + 1, 0);
     }
 
-    closesocket(s2);
-    return 0;
-}
+    shutdown(client_socket, SD_BOTH);
+    closesocket(client_socket);
 
-int numcl = 0;
+    EnterCriticalSection(&cs);
+    activeConnections--;
+    cout << "Client disconnected. Active connections: " << activeConnections << endl;
+    LeaveCriticalSection(&cs);
 
-void print() {
-    if (numcl)
-        printf("%d client connected\n", numcl);
-    else
-        printf("No clients connected\n");
+    return 0; 
 }
 
 int main() {
-    // Инициализируем список студентов
     setlocale(LC_CTYPE, "rus");
     initializeStudents();
+    InitializeCriticalSection(&cs);
 
     WORD wVersionRequested;
     WSADATA wsaData;
@@ -113,10 +114,14 @@ int main() {
     }
 
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+
+    int yes = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&yes, sizeof(yes));
+
     sockaddr_in local_addr;
     local_addr.sin_family = AF_INET;
     local_addr.sin_port = htons(1280);
-    local_addr.sin_addr.s_addr = 0;
+    local_addr.sin_addr.s_addr = INADDR_ANY;
 
     bind(s, (sockaddr*)&local_addr, sizeof(local_addr));
     listen(s, 5);
@@ -132,13 +137,31 @@ int main() {
     sockaddr_in client_addr;
     int client_addr_size = sizeof(client_addr);
 
-    while ((client_socket = accept(s, (sockaddr*)&client_addr, &client_addr_size))) {
-        numcl++;
-        print();
+    cout << "Waiting for connections..." << endl;
 
-        DWORD thID;
-        CreateThread(NULL, NULL, ThreadFunc, &client_socket, NULL, &thID);
+    while (true) {
+        client_socket = accept(s, (sockaddr*)&client_addr, &client_addr_size);
+
+        if (client_socket == INVALID_SOCKET) {
+            cout << "Accept error: " << WSAGetLastError() << endl;
+            continue;
+        }
+
+        SOCKET* client_socket_ptr = new SOCKET(client_socket);
+        HANDLE hThread = CreateThread(NULL, 0, ThreadFunc, client_socket_ptr, 0, NULL);
+
+        if (hThread) {
+            CloseHandle(hThread); 
+        }
+        else {
+            cout << "Failed to create thread" << endl;
+            closesocket(client_socket);
+            delete client_socket_ptr;
+        }
     }
 
+    DeleteCriticalSection(&cs);
+    closesocket(s);
+    WSACleanup();
     return 0;
 }
