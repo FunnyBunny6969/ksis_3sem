@@ -13,7 +13,7 @@ g++ server_var3.cpp -o server.exe -lws2_32
 echo Starting...
 
 start "UDP Server" cmd /k server.exe
-timeout /t 2 /nobreak >nul
+timeout /t 5 /nobreak >nul
 
 start "UDP Client" cmd /k client.exe
 
